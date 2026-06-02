@@ -12,9 +12,9 @@ router.use(authenticate);
 
 router.get('/',       getAll);
 router.get('/:id',    getById);
-router.post('/',      authorize('admin'), create);
+router.post('/',      authorize('smgr', 'admin'), create);
 router.put('/:id',    authorize('smgr', 'admin'), update);
-router.delete('/:id', authorize('admin'), remove);
+router.delete('/:id', authorize('smgr', 'admin'), remove);
 
 // Smgr gửi đơn cho NCC cụ thể
 router.post('/:id/send-order',    authorize('smgr', 'admin'), sendOrder);

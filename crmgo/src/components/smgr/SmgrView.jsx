@@ -140,6 +140,35 @@ function Section({ title, children }) {
   );
 }
 
+function StarRating({ value = 0, onChange, size = 22, readonly = false }) {
+  const [hovered, setHovered] = useState(0);
+  const active = hovered || value;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+      {[1,2,3,4,5].map(star => (
+        <span key={star}
+          onClick={() => !readonly && onChange(star === value ? 0 : star)}
+          onMouseEnter={() => !readonly && setHovered(star)}
+          onMouseLeave={() => !readonly && setHovered(0)}
+          style={{
+            fontSize: size, lineHeight:1,
+            cursor: readonly ? 'default' : 'pointer',
+            color: star <= active ? '#f59e0b' : '#d1d5db',
+            transition:'color .1s',
+            userSelect:'none',
+          }}
+        >★</span>
+      ))}
+      {value > 0 && (
+        <span style={{ fontSize:11, color:'#94a3b8', marginLeft:6 }}>{value}/5</span>
+      )}
+      {!readonly && value === 0 && (
+        <span style={{ fontSize:11, color:'#94a3b8', marginLeft:6 }}>Chưa đánh giá</span>
+      )}
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────
 // ASSIGN NCC PANEL — giao đơn cho nhà cung cấp
 // ────────────────────────────────────────────────────────────
@@ -302,7 +331,7 @@ function SupplierCard({ sup, onEdit, onDelete }) {
               {sup.email && <span>✉️ {sup.email}</span>}
             </div>
           )}
-          {sup.cats?.length > 0 && (
+          {Array.isArray(sup.cats) && sup.cats.length > 0 && (
             <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:7 }}>
               {sup.cats.map(c => (
                 <span key={c} style={{
@@ -328,8 +357,47 @@ function SupplierCard({ sup, onEdit, onDelete }) {
           ) : (
             <div style={{ marginTop:4, fontSize:10, color:'#94a3b8' }}>📍 Toàn quốc</div>
           )}
+          {(sup.company || sup.taxCode) && (
+            <div style={{ fontSize:11, color:'#475569', marginTop:5, display:'flex', gap:12, flexWrap:'wrap' }}>
+              {sup.company && <span>🏢 {sup.company}</span>}
+              {sup.taxCode && <span style={{ color:'#7c3aed' }}>📄 MST: {sup.taxCode}</span>}
+            </div>
+          )}
+          {sup.workshopAddress && (
+            <div style={{ fontSize:11, color:'#475569', marginTop:3 }}>
+              🏭 {sup.workshopAddress}
+            </div>
+          )}
           {sup.note && (
             <div style={{ fontSize:11, color:'#64748b', marginTop:4, fontStyle:'italic' }}>{sup.note}</div>
+          )}
+          {(sup.rating > 0 || sup.ratingPros || sup.ratingCons) && (
+            <div style={{ marginTop:8 }}>
+              {sup.rating > 0 && (
+                <div style={{ display:'flex', alignItems:'center', gap:2, marginBottom:4 }}>
+                  {[1,2,3,4,5].map(s => (
+                    <span key={s} style={{ fontSize:16, lineHeight:1, color: s <= sup.rating ? '#f59e0b' : '#d1d5db' }}>★</span>
+                  ))}
+                  <span style={{ fontSize:11, color:'#94a3b8', marginLeft:5 }}>{sup.rating}/5</span>
+                </div>
+              )}
+              {(sup.ratingPros || sup.ratingCons) && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {sup.ratingPros && (
+                    <span style={{
+                      fontSize:11, color:'#16a34a', background:'#f0fdf4',
+                      border:'1px solid #bbf7d0', borderRadius:99, padding:'2px 9px',
+                    }}>✅ {sup.ratingPros}</span>
+                  )}
+                  {sup.ratingCons && (
+                    <span style={{
+                      fontSize:11, color:'#b91c1c', background:'#fef2f2',
+                      border:'1px solid #fecaca', borderRadius:99, padding:'2px 9px',
+                    }}>⚠️ {sup.ratingCons}</span>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:6, flexShrink:0 }}>
@@ -351,12 +419,14 @@ function SupplierCard({ sup, onEdit, onDelete }) {
 const emptyForm = () => ({
   name:'', username:'', pass:'', confirmPass:'',
   phone:'', email:'', note:'', cats:[], areas:[], showPass:false,
+  company:'', taxCode:'', workshopAddress:'',
+  rating: 0, ratingPros:'', ratingCons:'',
 });
 
 function SupplierForm({ initial, suppliers, onSave, onCancel }) {
   const isEdit = !!initial?.id;
   const [f, setF] = useState(() => initial
-    ? { ...emptyForm(), ...initial, confirmPass: initial.pass || '', showPass:false }
+    ? { ...emptyForm(), ...initial, rating: initial.rating ?? 0, confirmPass: initial.pass || '', showPass:false }
     : emptyForm()
   );
   const [saving, setSaving] = useState(false);
@@ -381,6 +451,12 @@ function SupplierForm({ initial, suppliers, onSave, onCancel }) {
       pass: f.pass || initial?.pass || '123456',
       phone: f.phone.trim(), email: f.email.trim(),
       note: f.note.trim(), cats: f.cats, areas: f.areas,
+      company:         f.company.trim(),
+      taxCode:         f.taxCode.trim(),
+      workshopAddress: f.workshopAddress.trim(),
+      rating:          f.rating,
+      ratingPros:      f.ratingPros.trim(),
+      ratingCons:      f.ratingCons.trim(),
     });
     setSaving(false);
   };
@@ -503,6 +579,54 @@ function SupplierForm({ initial, suppliers, onSave, onCancel }) {
             </div>
             <RegionDropdown value={f.areas} onChange={v => set('areas', v)} />
           </Section>
+
+          <Section title="🏢 Thông tin pháp lý">
+            <div className="form-grid" style={{ marginTop:0 }}>
+              <div className="fi-group">
+                <label className="fi-label">Tên công ty / Hộ KD</label>
+                <input className="fi" placeholder="VD: Công ty TNHH In ABC"
+                  value={f.company} onChange={e => set('company', e.target.value)} />
+              </div>
+              <div className="fi-group">
+                <label className="fi-label">Mã số thuế (MST)</label>
+                <input className="fi" placeholder="VD: 0123456789"
+                  value={f.taxCode}
+                  onChange={e => set('taxCode', e.target.value.replace(/\D/g, ''))}
+                  maxLength={14} />
+              </div>
+            </div>
+            <div className="fi-group" style={{ marginTop:10 }}>
+              <label className="fi-label">Địa chỉ xưởng</label>
+              <textarea className="fi" rows={2}
+                placeholder="VD: 123 Nguyễn Văn Linh, Quận 7, TP.HCM"
+                value={f.workshopAddress}
+                onChange={e => set('workshopAddress', e.target.value)}
+                style={{ resize:'vertical' }} />
+            </div>
+          </Section>
+
+          <Section title="⭐ Đánh giá nhà cung cấp">
+            <div className="fi-group">
+              <label className="fi-label">Xếp hạng tổng thể</label>
+              <StarRating value={f.rating} onChange={v => set('rating', v)} size={26} />
+            </div>
+            <div className="form-grid" style={{ marginTop:10 }}>
+              <div className="fi-group">
+                <label className="fi-label" style={{ color:'#16a34a' }}>✅ Ưu điểm</label>
+                <input className="fi"
+                  placeholder="VD: Giao nhanh, giá tốt, ổn định..."
+                  value={f.ratingPros}
+                  onChange={e => set('ratingPros', e.target.value)} />
+              </div>
+              <div className="fi-group">
+                <label className="fi-label" style={{ color:'#dc2626' }}>⚠️ Nhược điểm</label>
+                <input className="fi"
+                  placeholder="VD: Đôi khi trễ hẹn..."
+                  value={f.ratingCons}
+                  onChange={e => set('ratingCons', e.target.value)} />
+              </div>
+            </div>
+          </Section>
         </div>
 
         {/* Footer */}
@@ -546,9 +670,9 @@ export default function SmgrView() {
   // ── Phân loại đơn hàng ──────────────────────────────────────
   // needAction = chờ giao NCC (chưa assign) hoặc đã giao (đang theo dõi)
   const needAction  = useMemo(() =>
-    orders.filter(o => ['kt_approved','supplier_sent','in_production'].includes(o.wfStatus)),
+    orders.filter(o => ['kt_approved','design_done','supplier_sent','in_production'].includes(o.wfStatus)),
   [orders]);
-  const pending     = useMemo(() => orders.filter(o => o.wfStatus === 'kt_approved'), [orders]);
+  const pending     = useMemo(() => orders.filter(o => ['kt_approved','design_done'].includes(o.wfStatus)), [orders]);
   const inProd      = useMemo(() => orders.filter(o => ['in_production','supplier_sent'].includes(o.wfStatus)), [orders]);
   const inWarehouse = useMemo(() => orders.filter(o => o.wfStatus === 'in_warehouse'), [orders]);
   const done        = useMemo(() => orders.filter(o => o.wfStatus === 'delivered'), [orders]);
@@ -572,26 +696,35 @@ export default function SmgrView() {
     return suppliers.filter(s =>
       s.name?.toLowerCase().includes(lq) ||
       s.username?.toLowerCase().includes(lq) ||
-      s.cats?.some(c => c.toLowerCase().includes(lq)) ||
+      (Array.isArray(s.cats) && s.cats.some(c => c.toLowerCase().includes(lq))) ||
       s.areas?.some(a => a.toLowerCase().includes(lq))
     );
   }, [suppliers, supQ]);
 
   // ── Handlers NCC ────────────────────────────────────────────
   const handleSupSave = async (data) => {
-    if (editTarget) {
-      updateSupplier(editTarget.id, data);
-      toast.success(`✅ Đã cập nhật "${data.name}"`);
-    } else {
-      addSupplier(data);
-      toast.success(`✅ Đã tạo NCC "${data.name}" (@${data.username})`);
+    try {
+      if (editTarget) {
+        await updateSupplier(editTarget.id, data);
+        toast.success(`✅ Đã cập nhật "${data.name}"`);
+      } else {
+        await addSupplier(data);
+        toast.success(`✅ Đã tạo NCC "${data.name}" (@${data.username})`);
+      }
+      setShowForm(false); setEditTarget(null);
+    } catch (e) {
+      toast.error(`Lỗi: ${e.message}`);
     }
-    setShowForm(false); setEditTarget(null);
   };
   const handleSupEdit   = (s) => { setEditTarget(s); setShowForm(true); };
-  const handleSupDelete = (s) => {
+  const handleSupDelete = async (s) => {
     if (!window.confirm(`Xoá "${s.name}"?`)) return;
-    deleteSupplier(s.id); toast.success(`Đã xoá ${s.name}`);
+    try {
+      await deleteSupplier(s.id);
+      toast.success(`Đã xoá ${s.name}`);
+    } catch (e) {
+      toast.error(`Lỗi xoá NCC: ${e.message}`);
+    }
   };
 
   // ── Handler giao NCC ────────────────────────────────────────
@@ -619,7 +752,7 @@ export default function SmgrView() {
           <div key={cat} className="kpi-card" style={{ borderTopColor:'#7c3aed' }}>
             <div className="kpi-lbl">{cat}</div>
             <div className="kpi-val" style={{ color:'#7c3aed', fontSize:20 }}>
-              {suppliers.filter(s => s.cats?.includes(cat)).length}
+              {suppliers.filter(s => Array.isArray(s.cats) && s.cats.includes(cat)).length}
             </div>
           </div>
         ))}
@@ -748,8 +881,9 @@ export default function SmgrView() {
             const isLate     = isAssigned && expectDate && expectDate < new Date();
             const hasQuote   = !!o.nccQuotePrice;
 
-            // Màu border: chờ giao = vàng, đã giao = xanh, trễ = đỏ
-            const accent = isLate ? '#dc2626' : isAssigned ? '#0d9488' : '#f59e0b';
+            const isDesignDone = o.wfStatus === 'design_done';
+            // Màu border: chờ giao = vàng, thiết kế xong = tím, đã giao = xanh, trễ = đỏ
+            const accent = isLate ? '#dc2626' : isAssigned ? '#0d9488' : isDesignDone ? '#7c3aed' : '#f59e0b';
 
             return (
               <div key={o.id} style={{ marginBottom:8 }}>
@@ -783,6 +917,14 @@ export default function SmgrView() {
                         display:'inline-flex', alignItems:'center', gap:5,
                       }}>
                         ✅ Đã giao: {o.smgrNccName}
+                      </span>
+                    ) : isDesignDone ? (
+                      <span style={{
+                        fontSize:10, fontWeight:700, color:'#7c3aed',
+                        background:'#f5f3ff', border:'1px solid #ddd6fe',
+                        borderRadius:5, padding:'3px 10px', whiteSpace:'nowrap',
+                      }}>
+                        🎨 Thiết kế xong — chờ giao NCC
                       </span>
                     ) : (
                       <span style={{

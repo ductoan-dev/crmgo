@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useDataStore, useUIStore } from '../../store';
-import { TEMP_CFG, CONTACT_STATUSES, CHANNEL_CFG, OVERDUE_HOURS } from '../../utils/constants';
+import { TEMP_CFG, CONTACT_STATUSES, CHANNEL_CFG, OVERDUE_HOURS, CUSTOMER_PROFILES } from '../../utils/constants';
 import { fmtDate, leadAgeHours, isLeadOverdue, fmtHours } from '../../utils/helpers';
 
 /* ─────────────────────────────────────────────────────────────
@@ -28,6 +28,19 @@ const STATUS_NOTE_LABEL = {
   ko_trien: 'Lý do không triển khai',
 };
 
+const LOAI_KHACH_MAP = {
+  doanh_nghiep:  '🏢 Doanh nghiệp',
+  ca_nhan:       '👤 Cá nhân',
+  ho_kinh_doanh: '🏪 Hộ kinh doanh',
+  to_chuc:       '🏛️ Tổ chức / NGO',
+};
+
+const UU_TIEN_MAP = {
+  cao:        '🔴 Cao',
+  trung_binh: '🟡 Trung bình',
+  thap:       '🟢 Thấp',
+};
+
 /* ═══════════════════════════════════════════════════════════════
    POPUP NHẬP LÝ DO
 ═══════════════════════════════════════════════════════════════ */
@@ -49,15 +62,12 @@ function ContactNotePopup({ leadName, status, prevNote, onSave, onSkip }) {
     return () => window.removeEventListener('keydown', esc);
   }, []);
 
-  /* Toggle preset: click lần 1 → thêm, click lần 2 → xoá */
   const togglePreset = (p) => {
     setNote(prev => {
       const lines = prev.trim() ? prev.trim().split('\n') : [];
       if (lines.includes(p)) {
-        // Đã có → xoá đi
         return lines.filter(l => l !== p).join('\n');
       } else {
-        // Chưa có → thêm vào
         return [...lines, p].join('\n');
       }
     });
@@ -81,8 +91,6 @@ function ContactNotePopup({ leadName, status, prevNote, onSave, onSkip }) {
         overflow: 'hidden',
         animation: 'modalIn .18s ease',
       }}>
-
-        {/* ── Header ── */}
         <div style={{
           padding: '18px 20px 14px',
           background: headerBg,
@@ -111,10 +119,7 @@ function ContactNotePopup({ leadName, status, prevNote, onSave, onSkip }) {
           >✕</button>
         </div>
 
-        {/* ── Body ── */}
         <div style={{ padding: '18px 20px 14px' }}>
-
-          {/* Gợi ý chọn nhanh */}
           {presets.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .5 }}>
@@ -144,7 +149,6 @@ function ContactNotePopup({ leadName, status, prevNote, onSave, onSkip }) {
             </div>
           )}
 
-          {/* Textarea nhập lý do */}
           <div>
             <label style={{
               fontSize: 11, fontWeight: 700, color: '#6b7280',
@@ -173,7 +177,6 @@ function ContactNotePopup({ leadName, status, prevNote, onSave, onSkip }) {
           </div>
         </div>
 
-        {/* ── Footer ── */}
         <div style={{
           padding: '12px 20px',
           borderTop: '1px solid #f3f4f6',
@@ -241,13 +244,11 @@ function StatusDropdown({ lead, top, left, onClose, onSelect }) {
   const ref = useRef(null);
 
   useEffect(() => {
-    // Đợi 1 tick để tránh mousedown mở đóng ngay
     const tid = setTimeout(() => {
       const fn = (e) => {
         if (ref.current && !ref.current.contains(e.target)) onClose();
       };
       document.addEventListener('mousedown', fn);
-      // cleanup
       ref.current._cleanup = () => document.removeEventListener('mousedown', fn);
     }, 0);
     return () => {
@@ -299,6 +300,290 @@ function StatusDropdown({ lead, top, left, onClose, onSelect }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   LEAD DETAIL POPUP — xem chi tiết (read-only)
+   * Lịch sử CSKH không được sửa / xóa tại đây
+═══════════════════════════════════════════════════════════════ */
+function SectionTitle({ children }) {
+  return (
+    <div style={{
+      fontSize: 11, fontWeight: 800, color: '#9ca3af',
+      textTransform: 'uppercase', letterSpacing: .6,
+      marginBottom: 10, paddingBottom: 6,
+      borderBottom: '1px solid #f3f4f6',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function DetailField({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', marginBottom: 2, textTransform: 'uppercase', letterSpacing: .4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>{children}</div>
+    </div>
+  );
+}
+
+function LeadDetailPopup({ lead, onClose, onCreateOpp, onCreateOrder }) {
+  const cskhCalls = (lead.cskhCalls || lead.cskh_calls || [])
+    .slice()
+    .sort((a, b) => new Date(b.callDate || b.createdAt) - new Date(a.callDate || a.createdAt));
+
+  const statusCfg  = CONTACT_STATUSES.find(s => s.value === (lead.contactStatus || 'chua_lh')) || CONTACT_STATUSES[0];
+  const tempCfg    = TEMP_CFG[lead.temp || 'warm'];
+  const channelCfg = lead.channel ? (CHANNEL_CFG[lead.channel] || null) : null;
+
+  const chandungLabels = (lead.chandung || [])
+    .map(v => { const p = CUSTOMER_PROFILES.find(x => x.value === v); return p ? `${p.icon} ${p.label}` : v; })
+    .join(' · ');
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 950,
+        background: 'rgba(0,0,0,.52)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: '#fff', borderRadius: 16, width: '100%', maxWidth: 600,
+        maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 32px 80px rgba(0,0,0,.22)',
+      }}>
+
+        {/* ── Header ── */}
+        <div style={{
+          padding: '18px 24px 14px',
+          background: '#f9fafb', borderBottom: '1px solid #e5e7eb',
+          borderRadius: '16px 16px 0 0',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          flexShrink: 0,
+        }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#111827' }}>{lead.name}</div>
+            {lead.company && (
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>🏢 {lead.company}</div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                color: statusCfg.color, background: statusCfg.bg, border: `1.5px solid ${statusCfg.color}44`,
+              }}>
+                {statusCfg.icon} {statusCfg.label}
+              </span>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '3px 9px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                color: tempCfg.color, background: tempCfg.bg, border: `1px solid ${tempCfg.color}30`,
+              }}>
+                {tempCfg.icon} {tempCfg.label}
+              </span>
+              {cskhCalls.length > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: '#2563eb',
+                  background: '#eff6ff', border: '1px solid #bfdbfe',
+                  borderRadius: 99, padding: '3px 9px',
+                }}>
+                  📞 {cskhCalls.length} lần CSKH
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 20, color: '#9ca3af', padding: 0, lineHeight: 1,
+          }}>✕</button>
+        </div>
+
+        {/* ── Body ── */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+
+          {/* Thông tin khách hàng */}
+          <SectionTitle>📋 Thông tin khách hàng</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px', marginBottom: 20 }}>
+            <DetailField label="Số điện thoại">
+              <span style={{ color: '#7c3aed', fontWeight: 700 }}>{lead.phone || '—'}</span>
+            </DetailField>
+            <DetailField label="Email">{lead.email || '—'}</DetailField>
+            {lead.company && <DetailField label="Công ty">{lead.company}</DetailField>}
+            {lead.taxCode && <DetailField label="Mã số thuế">{lead.taxCode}</DetailField>}
+            {lead.area && <DetailField label="Khu vực">📍 {lead.area}</DetailField>}
+            {(lead.loaiKhach || lead.loai_khach) && (
+              <DetailField label="Loại khách">
+                {LOAI_KHACH_MAP[lead.loaiKhach || lead.loai_khach] || lead.loaiKhach}
+              </DetailField>
+            )}
+            {lead.nganh && <DetailField label="Ngành">{lead.nganh}</DetailField>}
+            {lead.birthday && <DetailField label="Sinh nhật">🎂 {lead.birthday}</DetailField>}
+          </div>
+
+          {/* Thông tin kinh doanh */}
+          <SectionTitle>💼 Thông tin kinh doanh</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px', marginBottom: 12 }}>
+            {lead.product && <DetailField label="Sản phẩm quan tâm">{lead.product}</DetailField>}
+            <DetailField label="Kênh tiếp cận">
+              {channelCfg
+                ? `${channelCfg.icon} ${channelCfg.label}`
+                : (lead.customChannel || lead.channel || '—')}
+            </DetailField>
+            {(lead.nganSach || lead.ngan_sach) && (
+              <DetailField label="Ngân sách">{lead.nganSach || lead.ngan_sach}</DetailField>
+            )}
+            {(lead.thoiDiem || lead.thoi_diem) && (
+              <DetailField label="Thời điểm">{lead.thoiDiem || lead.thoi_diem}</DetailField>
+            )}
+            {(lead.uuTien || lead.uu_tien) && (
+              <DetailField label="Ưu tiên">
+                {UU_TIEN_MAP[lead.uuTien || lead.uu_tien] || (lead.uuTien || lead.uu_tien)}
+              </DetailField>
+            )}
+            <DetailField label="NV phụ trách">{lead.assignedTo || lead.createdBy || '—'}</DetailField>
+          </div>
+          {chandungLabels && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .4 }}>
+                Chân dung khách hàng
+              </div>
+              <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.8 }}>{chandungLabels}</div>
+            </div>
+          )}
+
+          {/* Ghi chú */}
+          {(lead.note || lead.contactNote) && (
+            <div style={{ marginBottom: 20 }}>
+              <SectionTitle>📝 Ghi chú</SectionTitle>
+              {lead.note && (
+                <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.6, marginBottom: 8 }}>{lead.note}</div>
+              )}
+              {lead.contactNote && (
+                <div style={{
+                  fontSize: 12, color: '#92400e', background: '#fffbeb',
+                  border: '1px solid #fde68a', borderRadius: 8,
+                  padding: '8px 12px', lineHeight: 1.6,
+                }}>
+                  📌 Lý do liên hệ: {lead.contactNote}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Lịch sử CSKH — READ ONLY */}
+          <SectionTitle>
+            📞 Lịch sử chăm sóc CSKH
+            {cskhCalls.length > 0 && (
+              <span style={{
+                marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#2563eb',
+                background: '#eff6ff', border: '1px solid #bfdbfe',
+                borderRadius: 99, padding: '1px 8px',
+              }}>
+                {cskhCalls.length} lần
+              </span>
+            )}
+          </SectionTitle>
+          {cskhCalls.length === 0 ? (
+            <div style={{
+              textAlign: 'center', padding: '16px 0', color: '#9ca3af',
+              fontSize: 12, fontStyle: 'italic', background: '#fafafa',
+              borderRadius: 8, marginBottom: 8,
+            }}>
+              Chưa có lịch sử chăm sóc
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+              {cskhCalls.map((c, idx) => (
+                <div key={c.id} style={{
+                  padding: '10px 14px', borderRadius: 10,
+                  background: idx === 0 ? '#eff6ff' : '#f9fafb',
+                  border: `1px solid ${idx === 0 ? '#bfdbfe' : '#e5e7eb'}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb' }}>
+                      {c.callDate || fmtDate(c.createdAt)}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#9ca3af' }}>👤 {c.callBy}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>{c.callNote}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: '#b0b7c3', fontStyle: 'italic', marginBottom: 16 }}>
+            * Lịch sử CSKH chỉ được thêm / xoá tại màn hình CSKH
+          </div>
+
+          {/* Meta */}
+          <div style={{ fontSize: 11, color: '#9ca3af', borderTop: '1px solid #f3f4f6', paddingTop: 10 }}>
+            Tạo lúc: {lead.createdAt ? fmtDate(lead.createdAt) : '—'}
+            {lead.createdBy && ` · Người tạo: ${lead.createdBy}`}
+          </div>
+        </div>
+
+        {/* ── Footer actions ── */}
+        <div style={{
+          padding: '14px 24px',
+          borderTop: '1px solid #f3f4f6',
+          background: '#f9fafb',
+          borderRadius: '0 0 16px 16px',
+          display: 'flex', gap: 8, justifyContent: 'flex-end',
+          flexShrink: 0,
+        }}>
+          <button
+            onClick={onCreateOrder}
+            style={{
+              padding: '9px 16px', fontSize: 13, fontWeight: 700,
+              background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
+              border: 'none', borderRadius: 8, cursor: 'pointer',
+              color: '#fff', fontFamily: 'inherit',
+              boxShadow: '0 2px 6px rgba(37,99,235,.28)',
+            }}
+          >
+            📋 Tạo đơn
+          </button>
+          {lead.contactStatus === 'da_chuyen' ? (
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: '#16a34a',
+              background: '#f0fdf4', border: '1px solid #bbf7d0',
+              borderRadius: 8, padding: '9px 16px',
+            }}>
+              ✅ Đã chuyển cơ hội
+            </span>
+          ) : (
+            <button
+              onClick={onCreateOpp}
+              style={{
+                padding: '9px 16px', fontSize: 13, fontWeight: 700,
+                background: 'linear-gradient(135deg,#E8380D,#c42d09)',
+                border: 'none', borderRadius: 8, cursor: 'pointer',
+                color: '#fff', fontFamily: 'inherit',
+                boxShadow: '0 2px 6px rgba(232,56,13,.28)',
+              }}
+            >
+              🎯 Tạo cơ hội
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            style={{
+              padding: '9px 16px', fontSize: 13, fontWeight: 600,
+              background: '#fff', border: '1.5px solid #e5e7eb',
+              borderRadius: 8, cursor: 'pointer', color: '#6b7280', fontFamily: 'inherit',
+            }}
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    MAIN — LeadsView
 ═══════════════════════════════════════════════════════════════ */
 export default function LeadsView() {
@@ -310,20 +595,24 @@ export default function LeadsView() {
   const [q, setQ]               = useState('');
   const [tempF, setTempF]       = useState('all');
   const [statF, setStatF]       = useState('all');
-  const [notePopup, setNotePopup]         = useState(null); // { leadId, leadName, status, prevNote }
-  const [dropdown, setDropdown]           = useState(null); // { leadId, top, left }
+  const [notePopup, setNotePopup]   = useState(null); // { leadId, leadName, status, prevNote }
+  const [dropdown, setDropdown]     = useState(null); // { leadId, top, left }
+  const [detailLead, setDetailLead] = useState(null); // lead object để xem chi tiết
 
-  /* ── Lọc danh sách lead của nhân viên đang đăng nhập ── */
+  /* ── Phân quyền: admin / isLeader xem tất cả leads ── */
+  const canSeeAll = user?.role === 'admin' || user?.isLeader === true;
+
+  /* ── Lọc danh sách lead ── */
   const myLeads = useMemo(() => leads.filter(l => {
-    const isMe  = !l.assignedTo || l.assignedTo === user?.name;
+    const isVisible = canSeeAll || !l.assignedTo || l.assignedTo === user?.name;
     const matchQ = !q
       || l.name?.toLowerCase().includes(q.toLowerCase())
       || l.phone?.includes(q)
       || l.product?.toLowerCase().includes(q.toLowerCase());
     const matchT = tempF === 'all' || l.temp === tempF;
     const matchS = statF === 'all' || l.contactStatus === statF;
-    return isMe && matchQ && matchT && matchS;
-  }), [leads, user, q, tempF, statF]);
+    return isVisible && matchQ && matchT && matchS;
+  }), [leads, user, canSeeAll, q, tempF, statF]);
 
   const kpis = useMemo(() => ({
     total:     myLeads.length,
@@ -334,11 +623,15 @@ export default function LeadsView() {
     overdue:   myLeads.filter(l => isLeadOverdue(l, OVERDUE_HOURS)).length,
   }), [myLeads]);
 
+  /* ── Grid columns — ẩn "NV phụ trách" nếu không có quyền ── */
+  const gridCols = canSeeAll
+    ? '36px 1.6fr 112px 105px 150px 112px 100px 88px 178px 90px 130px'
+    : '36px 1.6fr 112px 150px 112px 100px 88px 178px 90px 130px';
+
   /* ── Chọn trạng thái mới ── */
   const handleStatusSelect = (lead, newStatus) => {
-    setDropdown(null); // đóng dropdown trước
+    setDropdown(null);
     if (NEED_NOTE_STATUSES.includes(newStatus)) {
-      // Mở popup nhập lý do
       setNotePopup({
         leadId:   lead.id,
         leadName: lead.name,
@@ -351,7 +644,6 @@ export default function LeadsView() {
     }
   };
 
-  /* ── Lưu lý do từ popup ── */
   const handleSaveNote = (note) => {
     const { leadId, status } = notePopup;
     updateLead(leadId, { contactStatus: status, contactNote: note });
@@ -359,7 +651,6 @@ export default function LeadsView() {
     setNotePopup(null);
   };
 
-  /* ── Bỏ qua popup — vẫn cập nhật trạng thái ── */
   const handleSkipNote = () => {
     const { leadId, status } = notePopup;
     updateLead(leadId, { contactStatus: status, contactNote: '' });
@@ -367,9 +658,10 @@ export default function LeadsView() {
     setNotePopup(null);
   };
 
-  /* ── Chuyển lead thành cơ hội — mở modal AddOpp với dữ liệu từ lead ── */
-  const handleConvert = (lead) => {
+  /* ── Tạo cơ hội từ lead ── */
+  const handleCreateOpp = (lead) => {
     if (lead.contactStatus === 'da_chuyen') { toast.error('Lead này đã được chuyển'); return; }
+    setDetailLead(null);
     openModal('addOpp', {
       fromLead:    true,
       leadId:      lead.id,
@@ -378,6 +670,15 @@ export default function LeadsView() {
       chandung:    lead.chandung || [],
       thongtin:    lead.note || '',
       area:        lead.area || '',
+    });
+  };
+
+  /* ── Tạo đơn từ lead ── */
+  const handleCreateOrder = (lead) => {
+    setDetailLead(null);
+    openModal('addOrder', {
+      name:  lead.name  || '',
+      phone: lead.phone || '',
     });
   };
 
@@ -418,7 +719,7 @@ export default function LeadsView() {
   return (
     <div>
 
-      {/* ── POPUP LÝ DO (hiện khi cần) ──────────────────── */}
+      {/* ── POPUP LÝ DO ──────────────────────────────────────── */}
       {notePopup && (
         <ContactNotePopup
           leadName={notePopup.leadName}
@@ -429,7 +730,17 @@ export default function LeadsView() {
         />
       )}
 
-      {/* ── KPI ──────────────────────────────────────────── */}
+      {/* ── DETAIL POPUP ──────────────────────────────────────── */}
+      {detailLead && (
+        <LeadDetailPopup
+          lead={detailLead}
+          onClose={() => setDetailLead(null)}
+          onCreateOpp={() => handleCreateOpp(detailLead)}
+          onCreateOrder={() => handleCreateOrder(detailLead)}
+        />
+      )}
+
+      {/* ── KPI ──────────────────────────────────────────────── */}
       <div className="kpi-strip">
         <div className="kpi-card">
           <div className="kpi-lbl">Tổng lead</div>
@@ -462,7 +773,7 @@ export default function LeadsView() {
         </div>
       </div>
 
-      {/* ── TOOLBAR ──────────────────────────────────────── */}
+      {/* ── TOOLBAR ──────────────────────────────────────────── */}
       <div className="search-bar">
         <input
           className="search-input"
@@ -486,7 +797,7 @@ export default function LeadsView() {
         </button>
       </div>
 
-      {/* ── BẢNG LEAD ────────────────────────────────────── */}
+      {/* ── BẢNG LEAD ────────────────────────────────────────── */}
       {myLeads.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">👥</div>
@@ -499,12 +810,12 @@ export default function LeadsView() {
             background: '#fff', borderRadius: 12,
             border: '1px solid #e5e7eb',
             boxShadow: '0 1px 4px rgba(0,0,0,.06)',
-            minWidth: 980,
+            minWidth: canSeeAll ? 980 : 880,
           }}>
             {/* Header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '36px 1.6fr 112px 105px 150px 112px 100px 88px 178px 90px 130px',
+              gridTemplateColumns: gridCols,
               padding: '10px 16px', gap: 8,
               background: '#f9fafb',
               borderRadius: '12px 12px 0 0',
@@ -515,7 +826,7 @@ export default function LeadsView() {
               <div>#</div>
               <div>Khách hàng</div>
               <div>SĐT</div>
-              <div>Nhân viên</div>
+              {canSeeAll && <div>Nhân viên</div>}
               <div>Sản phẩm</div>
               <div>Kênh</div>
               <div>Khu vực</div>
@@ -533,18 +844,18 @@ export default function LeadsView() {
                 return aOd - bOd;
               })
               .map((lead, idx, arr) => {
-              const hasNote  = !!(lead.contactNote && NEED_NOTE_STATUSES.includes(lead.contactStatus));
-              const isLast   = idx === arr.length - 1;
-              const isOpen   = dropdown?.leadId === lead.id;
-              const overdue  = isLeadOverdue(lead, OVERDUE_HOURS);
-              const ageH     = overdue ? leadAgeHours(lead) : 0;
+              const hasNote = !!(lead.contactNote && NEED_NOTE_STATUSES.includes(lead.contactStatus));
+              const isLast  = idx === arr.length - 1;
+              const isOpen  = dropdown?.leadId === lead.id;
+              const overdue = isLeadOverdue(lead, OVERDUE_HOURS);
+              const ageH    = overdue ? leadAgeHours(lead) : 0;
 
               return (
                 <div
                   key={lead.id}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '36px 1.6fr 112px 105px 150px 112px 100px 88px 178px 90px 130px',
+                    gridTemplateColumns: gridCols,
                     padding: '11px 16px', gap: 8,
                     alignItems: 'center',
                     borderBottom: isLast ? 'none' : '1px solid #f3f4f6',
@@ -569,7 +880,6 @@ export default function LeadsView() {
                         ✉ {lead.email}
                       </div>
                     )}
-                    {/* Badge quá hạn */}
                     {overdue && (
                       <div style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -580,7 +890,6 @@ export default function LeadsView() {
                         ⏰ Quá hạn {fmtHours(ageH)} chưa liên hệ
                       </div>
                     )}
-                    {/* Lý do (nếu đã nhập) */}
                     {hasNote && (
                       <div
                         title={lead.contactNote}
@@ -610,10 +919,12 @@ export default function LeadsView() {
                     {lead.phone || '—'}
                   </div>
 
-                  {/* Nhân viên */}
-                  <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {lead.assignedTo || lead.createdBy || '—'}
-                  </div>
+                  {/* Nhân viên — chỉ hiện với canSeeAll */}
+                  {canSeeAll && (
+                    <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {lead.assignedTo || lead.createdBy || '—'}
+                    </div>
+                  )}
 
                   {/* Sản phẩm */}
                   <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lead.product}>
@@ -662,7 +973,18 @@ export default function LeadsView() {
 
                   {/* Hành động */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {/* Tạo cơ hội / badge đã chuyển */}
+                    <button
+                      onClick={() => setDetailLead(lead)}
+                      style={{
+                        fontSize: 11, fontWeight: 700, color: '#374151',
+                        background: '#f3f4f6',
+                        border: '1px solid #e5e7eb', borderRadius: 7,
+                        padding: '5px 8px', cursor: 'pointer',
+                        fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      👁 Chi tiết
+                    </button>
                     {lead.contactStatus === 'da_chuyen' ? (
                       <span style={{
                         fontSize: 10, fontWeight: 700, color: '#16a34a',
@@ -672,7 +994,7 @@ export default function LeadsView() {
                       }}>✅ Đã CH</span>
                     ) : (
                       <button
-                        onClick={() => handleConvert(lead)}
+                        onClick={() => handleCreateOpp(lead)}
                         style={{
                           fontSize: 11, fontWeight: 700, color: '#fff',
                           background: 'linear-gradient(135deg,#E8380D,#c42d09)',
@@ -682,26 +1004,9 @@ export default function LeadsView() {
                           boxShadow: '0 2px 6px rgba(232,56,13,.28)',
                         }}
                       >
-                        💡 Tạo CH
+                        🎯 Tạo cơ hội
                       </button>
                     )}
-                    {/* Tạo đơn trực tiếp */}
-                    <button
-                      onClick={() => openModal('addOrder', {
-                        name:  lead.name  || '',
-                        phone: lead.phone || '',
-                      })}
-                      style={{
-                        fontSize: 11, fontWeight: 700, color: '#fff',
-                        background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                        border: 'none', borderRadius: 7,
-                        padding: '5px 8px', cursor: 'pointer',
-                        fontFamily: 'inherit', whiteSpace: 'nowrap',
-                        boxShadow: '0 2px 6px rgba(37,99,235,.28)',
-                      }}
-                    >
-                      📋 Tạo đơn
-                    </button>
                   </div>
                 </div>
               );
@@ -713,6 +1018,9 @@ export default function LeadsView() {
       {myLeads.length > 0 && (
         <div style={{ marginTop: 10, fontSize: 12, color: '#9ca3af', textAlign: 'right' }}>
           {myLeads.length} lead
+          {canSeeAll && (
+            <span style={{ marginLeft: 6, color: '#d97706', fontWeight: 600 }}>· Chế độ xem toàn bộ</span>
+          )}
         </div>
       )}
     </div>

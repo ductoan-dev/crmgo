@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get('/',           getAll);
 router.get('/:id',        getById);
 router.post('/',          authorize('sales', 'mkt', 'admin'), create);
-router.put('/:id',        authorize('sales', 'mkt', 'admin'), update);
+router.put('/:id',        authorize('sales', 'mkt', 'cskh', 'admin'), update);
 router.delete('/:id',     authorize('sales', 'mkt', 'admin'), remove);
 router.post('/:id/transfer', authorize('mkt', 'admin'),       transfer);
 router.post('/:id/convert',  authorize('sales', 'admin'),      convertToOpp);

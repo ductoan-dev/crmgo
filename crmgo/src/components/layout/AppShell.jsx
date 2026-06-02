@@ -28,6 +28,24 @@ const ROLE_VIEW = {
   admin:  AdminView,
 };
 
+const ROLE_DEFAULT_TAB = {
+  sales:  'leads',    mkt:    'leads',   cskh:   'customers',
+  ketoan: 'approve',  design: 'orders',  kho:    'orders',
+  smgr:   'orders',   prod:   'list',    admin:  'dash',
+};
+
+const ROLE_VALID_TABS = {
+  sales:  ['leads','opps','orders','mycust','report'],
+  mkt:    ['leads','data','report'],
+  cskh:   ['customers'],
+  ketoan: ['approve','orders','report'],
+  design: ['orders','assign'],
+  kho:    ['orders','stock'],
+  smgr:   ['orders','suppliers','report','ai'],
+  prod:   ['list','status','dash'],
+  admin:  ['dash','users','piigo','biz'],
+};
+
 export default function AppShell() {
   const user                = useAuthStore(s => s.user);
   const checkOverdueLeads      = useDataStore(s => s.checkOverdueLeads);
@@ -37,13 +55,19 @@ export default function AppShell() {
   const activeTab           = useUIStore(s => s.activeTab);
 
   useEffect(() => {
+    if (!user?.role) return;
+
     // Áp dụng màu role
-    if (user?.role) {
-      document.documentElement.style.setProperty(
-        '--role-color',
-        ROLE_COLOR[user.role] || 'var(--primary)'
-      );
-      document.body.className = `role-${user.role}`;
+    document.documentElement.style.setProperty(
+      '--role-color',
+      ROLE_COLOR[user.role] || 'var(--primary)'
+    );
+    document.body.className = `role-${user.role}`;
+
+    // Reset tab nếu tab hiện tại không thuộc role này
+    const validTabs = ROLE_VALID_TABS[user.role] || [];
+    if (!validTabs.includes(activeTab)) {
+      setTab(ROLE_DEFAULT_TAB[user.role] || 'leads');
     }
 
     // Check quá hạn ngay sau khi mount (dữ liệu đã load từ LoginScreen/App.jsx)

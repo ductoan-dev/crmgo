@@ -701,12 +701,7 @@ export default function ProdView() {
 
                             {/* Layout 2 cột: thông tin + tất cả BG */}
                             <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 16 }}>
-                              <MyInfoCard
-                                order={o}
-                                user={user}
-                                onQuote={() => setQuotePopup(o)}
-                                onDecline={() => setDeclinePopup(o)}
-                              />
+                              <MyInfoCard order={o} user={user} />
                               <AllQuotesPanel
                                 order={o}
                                 allOrders={orders}

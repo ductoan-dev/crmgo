@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useDataStore } from '../../store';
 import { fmt, fmtDate } from '../../utils/helpers';
@@ -68,12 +68,95 @@ function QuotePopup({ order, onSave, onClose }) {
   );
 }
 
+// ── Form thêm báo giá mới ─────────────────────────────────────
+function AddQuoteForm({ order, onDone }) {
+  const addNccQuoteItem = useDataStore(s => s.addNccQuoteItem);
+  const [donGia,  setDonGia]  = useState('');
+  const [soLuong, setSoLuong] = useState(order.soluong ? String(order.soluong).replace(/\./g, '') : '');
+  const [note,    setNote]    = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const parseDonGia  = (s) => parseInt((s || '').replace(/\D/g, ''), 10) || 0;
+  const parseSoLuong = (s) => parseInt((s || '').replace(/\D/g, ''), 10) || 0;
+  const tongGia = parseDonGia(donGia) * parseSoLuong(soLuong);
+
+  const fmtInput = (s) => {
+    const n = parseInt((s || '').replace(/\D/g, ''), 10);
+    return n ? new Intl.NumberFormat('vi-VN').format(n) : '';
+  };
+
+  const handleSave = () => {
+    const dg = parseDonGia(donGia);
+    const sl = parseSoLuong(soLuong);
+    if (!dg) { toast.error('Vui lòng nhập đơn giá'); return; }
+    if (!sl) { toast.error('Vui lòng nhập số lượng'); return; }
+    addNccQuoteItem(order.id, { donGia: dg, soLuong: sl, note: note.trim() });
+    toast.success(`✅ Đã thêm báo giá ${new Intl.NumberFormat('vi-VN').format(tongGia)}đ`);
+    onDone();
+  };
+
+  return (
+    <tr style={{ background: '#f5f3ff' }}>
+      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: 12, textAlign: 'center' }}>–</td>
+      <td style={{ padding: '8px 10px', fontSize: 11, color: '#64748b' }}>Mới</td>
+      <td style={{ padding: '8px 10px' }}>
+        <input
+          ref={inputRef}
+          style={{ width: 100, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #a5b4fc', fontSize: 12, outline: 'none' }}
+          placeholder="Đơn giá"
+          value={donGia}
+          onChange={e => setDonGia(e.target.value.replace(/\D/g, ''))}
+          onBlur={e => setDonGia(fmtInput(e.target.value))}
+        />
+      </td>
+      <td style={{ padding: '8px 10px' }}>
+        <input
+          style={{ width: 80, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #a5b4fc', fontSize: 12, outline: 'none' }}
+          placeholder="SL"
+          value={soLuong}
+          onChange={e => setSoLuong(e.target.value.replace(/\D/g, ''))}
+          onBlur={e => setSoLuong(fmtInput(e.target.value))}
+        />
+      </td>
+      <td style={{ padding: '8px 10px', fontWeight: 700, color: tongGia ? '#6366f1' : '#94a3b8', fontSize: 13 }}>
+        {tongGia ? new Intl.NumberFormat('vi-VN').format(tongGia) + 'đ' : '–'}
+      </td>
+      <td style={{ padding: '8px 10px' }}>
+        <input
+          style={{ width: 100, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #e2e8f0', fontSize: 12, outline: 'none' }}
+          placeholder="Ghi chú"
+          value={note}
+          onChange={e => setNote(e.target.value)}
+        />
+      </td>
+      <td style={{ padding: '8px 10px' }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          <button onClick={handleSave} style={{
+            fontSize: 11, fontWeight: 700, color: '#fff',
+            background: '#6366f1', border: 'none', borderRadius: 6,
+            padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit',
+          }}>Lưu</button>
+          <button onClick={onDone} style={{
+            fontSize: 11, color: '#64748b', background: '#f1f5f9',
+            border: 'none', borderRadius: 6, padding: '4px 8px',
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>Huỷ</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ── Card trái: thông tin cơ hội + báo giá của tôi ────────────
-export function MyInfoCard({ order, user, onQuote, onDecline }) {
-  const catColor  = CAT_CLR[order.orderType] || '#64748b';
-  const wf        = WF_LABEL[order.wfStatus] || { label: order.wfStatus || '–', color: '#64748b' };
-  const hasQuote  = !!order.nccQuotePrice;
-  const isDone    = ['delivered', 'in_warehouse'].includes(order.wfStatus || '');
+export function MyInfoCard({ order, user }) {
+  const deleteNccQuoteItem = useDataStore(s => s.deleteNccQuoteItem);
+  const [showForm, setShowForm] = useState(false);
+
+  const wf     = WF_LABEL[order.wfStatus] || { label: order.wfStatus || '–', color: '#64748b' };
+  const isDone = ['delivered', 'in_warehouse'].includes(order.wfStatus || '');
+  const items  = order.nccQuoteItems || [];
 
   const specParts = [
     order.orderType,
@@ -84,14 +167,13 @@ export function MyInfoCard({ order, user, onQuote, onDecline }) {
   return (
     <div style={{
       background: '#fff',
-      border: '2px solid #6366f1',
+      border: '1.5px solid #e0e7ff',
       borderRadius: 14,
       padding: 20,
-      boxShadow: '0 4px 16px rgba(99,102,241,0.10)',
-      height: '100%',
+      boxShadow: '0 2px 8px rgba(99,102,241,0.07)',
       display: 'flex',
       flexDirection: 'column',
-      gap: 16,
+      gap: 14,
     }}>
       {/* Tiêu đề */}
       <div style={{
@@ -180,109 +262,101 @@ export function MyInfoCard({ order, user, onQuote, onDecline }) {
       )}
 
       {/* BÁO GIÁ CỦA TÔI */}
-      <div style={{
-        marginTop: 'auto',
-        borderTop: '1px solid #e0e7ff',
-        paddingTop: 14,
-      }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', letterSpacing: 0.5, marginBottom: 10 }}>
-          BÁO GIÁ CỦA TÔI
+      <div style={{ borderTop: '1px solid #e0e7ff', paddingTop: 14 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', letterSpacing: 0.5 }}>
+            BÁO GIÁ CỦA TÔI ({items.length})
+          </div>
+          {!isDone && !showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              style={{
+                fontSize: 12, fontWeight: 700, color: '#6366f1',
+                background: '#eef2ff', border: '1.5px solid #c7d2fe',
+                borderRadius: 7, padding: '4px 12px',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              + Thêm BG mới
+            </button>
+          )}
         </div>
 
-        {order.nccDeclined ? (
-          <div style={{
-            background: '#fef2f2', border: '1.5px solid #fca5a5',
-            borderRadius: 10, padding: '12px 16px',
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 6 }}>
-              ❌ Đã từ chối báo giá
-            </div>
-            {order.nccDeclineReason && (
-              <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginBottom: 10 }}>
-                Lý do: {order.nccDeclineReason}
-              </div>
-            )}
-            {!isDone && onQuote && (
-              <button
-                onClick={onQuote}
-                style={{
-                  fontSize: 12, fontWeight: 700, color: '#6d28d9',
-                  background: '#f5f3ff', border: '1.5px solid #ddd6fe',
-                  borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                ↩ Chuyển sang báo giá
-              </button>
-            )}
-          </div>
-        ) : hasQuote ? (
-          <div style={{
-            background: '#f0fdf4', border: '1.5px solid #bbf7d0',
-            borderRadius: 10, padding: '12px 16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a' }}>
-                {new Intl.NumberFormat('vi-VN').format(order.nccQuotePrice)}đ
-              </div>
-              {order.nccQuoteNote && (
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
-                  {order.nccQuoteNote}
-                </div>
+        {/* Table */}
+        <div style={{ overflowX: 'auto', borderRadius: 9, border: '1px solid #e0e7ff' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+            <thead>
+              <tr style={{ background: '#f5f3ff', borderBottom: '1.5px solid #e0e7ff' }}>
+                {['#','THỜI GIAN','ĐƠN GIÁ','SỐ LƯỢNG','TỔNG GIÁ','GHI CHÚ',''].map((h, i) => (
+                  <th key={i} style={{
+                    padding: '7px 10px', textAlign: 'left',
+                    fontSize: 10, fontWeight: 700, color: '#6366f1', letterSpacing: 0.4,
+                    whiteSpace: 'nowrap',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 && !showForm && (
+                <tr>
+                  <td colSpan={7} style={{ padding: '16px 12px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>
+                    Chưa có báo giá · bấm "+ Thêm BG mới" để nhập
+                  </td>
+                </tr>
               )}
-            </div>
-            {!isDone && (
-              <button
-                onClick={onQuote}
-                style={{
-                  fontSize: 12, fontWeight: 700, color: '#16a34a',
-                  background: '#dcfce7', border: '1.5px solid #86efac',
-                  borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                ✏️ Sửa giá
-              </button>
-            )}
-          </div>
-        ) : (
-          <div style={{
-            background: '#fef2f2', border: '1.5px dashed #fca5a5',
-            borderRadius: 10, padding: '14px 16px', textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600, marginBottom: 10 }}>
-              Chưa có báo giá
-            </div>
-            {!isDone && (
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button
-                  onClick={onQuote}
-                  style={{
-                    fontSize: 13, fontWeight: 800, color: '#fff',
-                    background: 'linear-gradient(135deg, #4f46e5, #6d28d9)',
-                    border: 'none', borderRadius: 8, padding: '8px 18px',
-                    cursor: 'pointer', fontFamily: 'inherit',
-                  }}
-                >
-                  💰 Nhập báo giá
-                </button>
-                {onDecline && (
-                  <button
-                    onClick={onDecline}
-                    style={{
-                      fontSize: 12, fontWeight: 700, color: '#dc2626',
-                      background: '#fef2f2', border: '1.5px solid #fca5a5',
-                      borderRadius: 8, padding: '8px 16px',
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >
-                    ❌ Từ chối BG
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+              {items.map((item, idx) => (
+                <tr key={item.id} style={{
+                  borderBottom: '1px solid #f1f5f9',
+                  background: idx % 2 === 0 ? '#fff' : '#fafafe',
+                }}>
+                  <td style={{ padding: '8px 10px', fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>{idx + 1}</td>
+                  <td style={{ padding: '8px 10px', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{item.time}</td>
+                  <td style={{ padding: '8px 10px', fontSize: 12, color: '#475569' }}>
+                    {new Intl.NumberFormat('vi-VN').format(item.donGia)}đ
+                  </td>
+                  <td style={{ padding: '8px 10px', fontSize: 12, color: '#475569' }}>
+                    {new Intl.NumberFormat('vi-VN').format(item.soLuong)}
+                  </td>
+                  <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 800, color: '#16a34a' }}>
+                    {new Intl.NumberFormat('vi-VN').format(item.tongGia)}đ
+                  </td>
+                  <td style={{ padding: '8px 10px', fontSize: 12, color: '#64748b' }}>{item.note || '–'}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {!isDone && (
+                      <button
+                        onClick={() => deleteNccQuoteItem(order.id, item.id)}
+                        style={{
+                          fontSize: 11, color: '#dc2626', background: 'none',
+                          border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                          fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                        }}
+                      >Xoá</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {showForm && (
+                <AddQuoteForm order={order} onDone={() => setShowForm(false)} />
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Nút thêm dưới bảng (khi bảng đã có data) */}
+        {!isDone && !showForm && items.length > 0 && (
+          <button
+            onClick={() => setShowForm(true)}
+            style={{
+              marginTop: 10, fontSize: 12, fontWeight: 700, color: '#6366f1',
+              background: '#eef2ff', border: '1.5px solid #c7d2fe',
+              borderRadius: 8, padding: '6px 16px',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            + Thêm BG mới
+          </button>
         )}
       </div>
     </div>
@@ -301,19 +375,27 @@ export function AllQuotesPanel({ order, allOrders, mySupplier }) {
       ) && o.nccQuotePrice
     );
 
+    // Lấy tổng giá mới nhất từ nccQuoteItems (nếu có), fallback về nccQuotePrice
+    const getTotal = (o) => {
+      const items = o.nccQuoteItems || [];
+      return items.length > 0 ? items[items.length - 1].tongGia : (o.nccQuotePrice || 0);
+    };
+
     const quotes = related.map(o => ({
       supplier: o.smgrNccName || '–',
-      price:    o.nccQuotePrice,
-      note:     o.nccQuoteNote,
+      price:    getTotal(o),
+      count:    (o.nccQuoteItems || []).length || (o.nccQuotePrice ? 1 : 0),
       isMe:     o.smgrNccName === mySupplier,
     }));
 
-    // Thêm báo giá của chính mình nếu đã có
-    if (order.nccQuotePrice) {
+    // Thêm báo giá của chính mình
+    const myTotal = getTotal(order);
+    const myCount = (order.nccQuoteItems || []).length || (order.nccQuotePrice ? 1 : 0);
+    if (myTotal) {
       quotes.unshift({
         supplier: mySupplier || order.smgrNccName || '–',
-        price:    order.nccQuotePrice,
-        note:     order.nccQuoteNote,
+        price:    myTotal,
+        count:    myCount,
         isMe:     true,
       });
     }
