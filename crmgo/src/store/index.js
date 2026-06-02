@@ -87,7 +87,13 @@ export const useDataStore = create((set, get) => ({
     // Fallback: localStorage
     const ORDER_TYPE_NORM = { 'in-an': 'In nhanh', 'thiet-ke': 'Thiết kế', 'lam-mau': 'Làm mẫu', 'ban-le': 'Bán lẻ' };
     const leads  = lsGet(DB_KEYS.leads, [])
-      .map(l => ({ ...l, createdAt: l.createdAt ? new Date(l.createdAt) : new Date() }));
+      .map(l => ({
+        ...l,
+        createdAt:   l.createdAt ? new Date(l.createdAt) : new Date(),
+        cskhCalls:   Array.isArray(l.cskhCalls)   ? l.cskhCalls   : [],
+        chandung:    Array.isArray(l.chandung)     ? l.chandung    : [],
+        attachments: Array.isArray(l.attachments)  ? l.attachments : [],
+      }));
     const opps   = lsGet(DB_KEYS.opps, [])
       .map(o => ({ ...o, dateObj: o.dateObj ? new Date(o.dateObj) : new Date(), quotes: o.quotes || [] }));
     const orders = lsGet(DB_KEYS.orders, [])

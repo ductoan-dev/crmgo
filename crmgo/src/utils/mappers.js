@@ -62,11 +62,11 @@ export const fromApiLead = (d) => ({
   uuTien:      d.uu_tien     || 'trung_binh',
   nganSach:    d.ngan_sach   || 'Chưa xác định',
   thoiDiem:    d.thoi_diem   || 'Chưa xác định',
-  chandung:    d.chandung    || [],
+  chandung:    Array.isArray(d.chandung)    ? d.chandung    : [],
   product:     d.product     || '',
   trangThai:   d.trang_thai  || 'moi',
-  cskhCalls:   d.cskh_calls  || [],
-  attachments: d.attachments || [],
+  cskhCalls:   Array.isArray(d.cskh_calls)  ? d.cskh_calls  : [],
+  attachments: Array.isArray(d.attachments) ? d.attachments : [],
   createdAt:   d.created_at ? new Date(d.created_at) : new Date(),
 });
 

@@ -420,6 +420,10 @@ a { color: inherit; text-decoration: none; }
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 .modal-head {
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);

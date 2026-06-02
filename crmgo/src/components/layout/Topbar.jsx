@@ -6,9 +6,24 @@ import { initials } from '../../utils/helpers';
 export default function Topbar() {
   const user   = useAuthStore(s => s.user);
   const logout = useAuthStore(s => s.logout);
+  const load   = useDataStore(s => s.load);
   const notifications = useDataStore(s => s.notifications);
   const markAllRead   = useDataStore(s => s.markAllRead);
-  const [showNotifs, setShowNotifs] = useState(false);
+  const [showNotifs,   setShowNotifs]   = useState(false);
+  const [refreshing,   setRefreshing]   = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await load();
+      toast.success('Đã cập nhật dữ liệu', { duration: 1500 });
+    } catch {
+      toast.error('Không thể tải dữ liệu');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const unread = notifications.filter(n =>
     !n.read && (
@@ -36,6 +51,24 @@ export default function Topbar() {
       </div>
 
       <div className="tb-sep" />
+
+      {/* Refresh button */}
+      <button
+        onClick={handleRefresh}
+        disabled={refreshing}
+        title="Làm mới dữ liệu"
+        style={{
+          background: 'none', border: 'none', cursor: refreshing ? 'wait' : 'pointer',
+          fontSize: 16, lineHeight: 1, padding: '4px 6px', borderRadius: 6,
+          color: refreshing ? 'var(--primary)' : '#94a3b8',
+          transition: 'color .15s',
+          animation: refreshing ? 'spin 0.8s linear infinite' : 'none',
+          marginRight: 4,
+        }}
+        aria-label="Làm mới"
+      >
+        🔄
+      </button>
 
       {/* Notifications */}
       <div style={{ position: 'relative' }}>
